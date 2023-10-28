@@ -1,0 +1,131 @@
+WITH
+app_dl AS(
+	SELECT ad.platform, 
+  			CAST(ad.download_ts AS date) AS download_date,
+		COUNT(*) AS user_count,
+    s.age_range,
+    0 AS funnel_step,
+	'donwload' AS funnel_name
+	FROM app_downloads ad
+  LEFT JOIN signups s
+  ON ad.app_download_key = s.session_id
+  GROUP BY platform, CAST(ad.download_ts AS date), s.age_range
+),
+
+total_signups AS(
+  			SELECT ad.platform, 
+  			CAST(ad.download_ts AS date) AS download_date,
+        COUNT(DISTINCT user_id) AS total_users_signed_up,
+        s.age_range,
+  			1 AS funnel_step,
+    		'signup' AS funnel_name
+    FROM signups s
+    LEFT JOIN app_downloads ad
+    ON s.session_id = ad.app_download_key
+		GROUP BY platform, CAST(ad.download_ts AS date), s.age_range
+),
+
+ride_req AS(
+  		SELECT ad.platform, 
+  			CAST(ad.download_ts AS date) AS download_date,
+  			COUNT(DISTINCT rr.user_id) AS total_ride_req,
+  			s.age_range,
+  			2 AS funnel_step,
+  			'ride_requested' AS funnel_name
+  		FROM ride_requests rr
+  		JOIN signups s
+  		ON rr.user_id = s.user_id
+  		LEFT JOIN app_downloads ad
+  		ON s.session_id = ad.app_download_key
+  	WHERE request_ts IS NOT NULL
+		GROUP BY platform, CAST(ad.download_ts AS date), s.age_range
+),
+
+ride_acc AS( 
+  		SELECT ad.platform, 
+  			CAST(ad.download_ts AS date) AS download_date,
+  			COUNT(DISTINCT rr.user_id) AS total_ride_acc,
+  			s.age_range, 
+  			3 AS funnel_step,
+  			'ride_accepted' AS funnel_name
+				FROM ride_requests rr
+  		JOIN signups s
+  		ON rr.user_id = s.user_id
+  		LEFT JOIN app_downloads ad
+  		ON s.session_id = ad.app_download_key
+  	WHERE accept_ts IS NOT NULL
+		GROUP BY platform, CAST(ad.download_ts AS date), s.age_range
+),
+
+ride_comp AS( 
+  		SELECT ad.platform, 
+  			CAST(ad.download_ts AS date) AS download_date,
+  			COUNT(DISTINCT rr.user_id) AS total_ride_comp,
+  			s.age_range, 
+  			4 AS funnel_step,
+  			'ride_completed' AS funnel_name
+				FROM ride_requests rr
+  		JOIN signups s
+  		ON rr.user_id = s.user_id
+  		LEFT JOIN app_downloads ad
+  		ON s.session_id = ad.app_download_key
+  	WHERE dropoff_ts IS NOT NULL
+		GROUP BY platform, CAST(ad.download_ts AS date), s.age_range
+),
+
+paid AS (
+  	SELECT ad.platform, 
+  			CAST(ad.download_ts AS date) AS download_date,
+  			COUNT(DISTINCT rr.user_id) AS total_paid,
+  			s.age_range,
+  			5 AS funnel_step,
+  			'payment' AS funnel_name
+  			FROM transactions t
+  			JOIN ride_requests rr
+  			ON t.ride_id = rr.ride_id
+  			JOIN signups s
+  		ON rr.user_id = s.user_id
+  		LEFT JOIN app_downloads ad
+  		ON s.session_id = ad.app_download_key
+  		WHERE charge_status = 'Approved'
+  		GROUP BY platform, CAST(ad.download_ts AS date), s.age_range
+),
+
+reviewed AS (
+  		SELECT ad.platform, 
+  			CAST(ad.download_ts AS date) AS download_date,
+  			COUNT(DISTINCT re.user_id) AS reviewer,
+  			s.age_range,
+  			6 AS funnel_step,
+  			'review' AS funnel_name
+  			FROM reviews re
+  			JOIN ride_requests rr
+  			ON re.user_id = rr.user_id
+  			JOIN signups s
+  		ON rr.user_id = s.user_id
+  		LEFT JOIN app_downloads ad
+  		ON s.session_id = ad.app_download_key
+  		WHERE review IS NOT NULL
+  		GROUP BY platform, CAST(ad.download_ts AS date), s.age_range
+)
+SELECT *
+FROM app_dl
+UNION
+SELECT *
+FROM total_signups
+UNION
+SELECT *
+FROM ride_req
+UNION
+SELECT *
+FROM ride_acc
+UNION
+SELECT *
+FROM ride_comp
+UNION
+SELECT *
+FROM paid
+UNION
+SELECT *
+FROM reviewed
+
